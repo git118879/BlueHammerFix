@@ -1,0 +1,47 @@
+title: NTFS Junction to BaseNamedObjects — Symlink Attack on Privileged File Read
+id: 2c5a4e23-d9f6-4fb3-c8a5-3a4f7e0d1c2b
+status: experimental
+description: |
+    Detects creation of an NTFS junction (reparse point) targeting \BaseNamedObjects\Restricted.
+    BlueHammer uses this to redirect Windows Defender's file read through a junction+object
+    manager symlink chain to access the SAM database via a Volume Shadow Copy.
+    This is a generic TOCTOU primitive that could be reused against other privileged services.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+    - https://googleprojectzero.blogspot.com/2015/12/between-rock-and-hard-link.html
+date: 2026/04/06
+author: Red Team
+logsource:
+    category: file_event
+    product: windows
+detection:
+    selection_reparse:
+        EventType: 'SetReparsePoint'
+    selection_target:
+        TargetFilename|contains:
+            - '\BaseNamedObjects'
+    condition: selection_reparse and selection_target
+falsepositives:
+    - Very unlikely in legitimate use — BaseNamedObjects is a kernel object namespace,
+      not a filesystem path. Any junction targeting it is highly suspicious.
+level: critical
+tags:
+    - attack.defense_evasion
+    - attack.t1574.005
+    - attack.privilege_escalation
+    - attack.t1068
+---
+# NOTE: Most standard log sources do not capture reparse point targets directly.
+# Detection requires either:
+# 1. Kernel-File ETW provider capturing FSCTL_SET_REPARSE_POINT operations
+# 2. Minifilter driver logging (some EDR agents capture this)
+# 3. Sysmon with FileCreateStreamHash or custom configuration
+#
+# For EDR-specific implementation:
+# - CrowdStrike: Look for ReparsePointTarget in FileWritten events
+# - Microsoft Defender for Endpoint:
+#     DeviceFileEvents
+#     | where ActionType == "FileModified"
+#     | where FolderPath matches regex @"\\[0-9a-f]{8}-.*"
+#     | where AdditionalFields contains "ReparsePoint"
+# - SentinelOne: Deep Visibility query on file.reparse events

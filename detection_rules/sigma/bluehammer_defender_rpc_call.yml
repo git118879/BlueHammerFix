@@ -1,0 +1,42 @@
+title: Direct RPC Call to Windows Defender Update Endpoint
+id: 7b0f9d78-ce4b-4ea8-bfda-8f9e2d5c6b7a
+status: experimental
+description: |
+    Detects a non-Windows-Update process making an RPC connection to the Windows Defender
+    ALPC endpoint (IMpService). BlueHammer calls Proc42_ServerMpUpdateEngineSignature
+    via this RPC interface to trick Defender into loading attacker-controlled update files
+    from a user-specified directory, enabling the junction+symlink file leak.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+date: 2026/04/06
+author: Red Team
+logsource:
+    product: windows
+    category: pipe_connected
+detection:
+    selection:
+        PipeName|contains: 'IMpService'
+    filter_defender:
+        Image|endswith:
+            - '\MsMpEng.exe'
+            - '\MpCmdRun.exe'
+            - '\NisSrv.exe'
+            - '\MpSigStub.exe'
+            - '\svchost.exe'
+            - '\SecurityHealthService.exe'
+    condition: selection and not filter_defender
+falsepositives:
+    - Third-party security management tools that interface with Defender
+    - Microsoft Endpoint Manager / Intune agent
+level: high
+tags:
+    - attack.defense_evasion
+    - attack.t1562.001
+    - attack.privilege_escalation
+---
+# Alternative detection via RPC ETW:
+# Provider: Microsoft-Windows-RPC {6AD52B32-D609-4BE9-AE07-CE8DAE937E39}
+# Filter for:
+#   InterfaceUuid = c503f532-443a-4c69-8300-ccd1fbdb3839
+#   Endpoint contains "IMpService"
+#   ProcessName != MsMpEng.exe, MpCmdRun.exe, svchost.exe

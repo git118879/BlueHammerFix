@@ -1,0 +1,42 @@
+title: Cloud Files Sync Root Registration by Non-Cloud-Storage Process
+id: 5f8d7b56-ac29-4ce6-fbd8-6d7c0b3a4f5e
+status: experimental
+description: |
+    Detects Cloud Files (CfApi) sync root registration by processes that are not
+    known cloud storage providers (OneDrive, Dropbox, Google Drive, iCloud, etc.).
+    BlueHammer abuses the Cloud Files API to register a sync root, create placeholder
+    files, and use callbacks to identify and selectively freeze Windows Defender.
+    This primitive could be reused against any process that enumerates directories.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+    - https://learn.microsoft.com/en-us/windows/win32/cfapi/build-a-cloud-file-sync-engine
+date: 2026/04/06
+author: Red Team
+logsource:
+    category: image_load
+    product: windows
+detection:
+    selection:
+        ImageLoaded|endswith: '\CldApi.dll'
+    filter_known_providers:
+        Image|endswith:
+            - '\OneDrive.exe'
+            - '\OneDriveSetup.exe'
+            - '\FileCoAuth.exe'
+            - '\Dropbox.exe'
+            - '\GoogleDriveFS.exe'
+            - '\iCloudDrive.exe'
+            - '\explorer.exe'
+    filter_system:
+        Image|startswith:
+            - 'C:\Windows\System32\'
+            - 'C:\Windows\SysWOW64\'
+    condition: selection and not filter_known_providers and not filter_system
+falsepositives:
+    - Legitimate third-party cloud storage sync engines
+    - Development/testing of cloud file providers
+level: high
+tags:
+    - attack.defense_evasion
+    - attack.t1562.001
+    - attack.privilege_escalation

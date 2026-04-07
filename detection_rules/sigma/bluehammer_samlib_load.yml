@@ -1,0 +1,36 @@
+title: Non-LSASS Process Loading samlib.dll — Potential SAM Credential Manipulation
+id: 8a3f2c01-b7e4-4d91-a6f3-1e2d5c8b9a0f
+status: experimental
+description: |
+    Detects a non-LSASS process loading samlib.dll, which exports SamiChangePasswordUser.
+    BlueHammer uses this to change user passwords using extracted NTLM hashes without
+    knowing the plaintext password (local pass-the-hash).
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+date: 2026/04/06
+author: Red Team
+logsource:
+    category: image_load
+    product: windows
+detection:
+    selection:
+        ImageLoaded|endswith: '\samlib.dll'
+    filter_lsass:
+        Image|endswith: '\lsass.exe'
+    filter_system:
+        Image|endswith:
+            - '\svchost.exe'
+            - '\services.exe'
+            - '\winlogon.exe'
+            - '\LogonUI.exe'
+            - '\csrss.exe'
+    condition: selection and not filter_lsass and not filter_system
+falsepositives:
+    - Legitimate credential management tools
+    - Domain join operations
+    - Some third-party authentication software
+level: high
+tags:
+    - attack.credential_access
+    - attack.t1003.002
+    - attack.t1098

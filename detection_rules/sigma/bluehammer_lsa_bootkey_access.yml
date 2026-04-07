@@ -1,0 +1,41 @@
+title: LSA Boot Key Registry Access from Non-LSASS Process
+id: 6a9e8c67-bd3a-4df7-ace9-7e8d1c4b5a6f
+status: experimental
+description: |
+    Detects access to the LSA boot key component registry keys (JD, Skew1, GBG, Data)
+    from a process other than LSASS. These four keys under
+    HKLM\SYSTEM\CurrentControlSet\Control\Lsa contain class name data that when combined
+    and permuted yields the system boot key (SYSKEY), used to decrypt SAM database entries.
+    BlueHammer reads these to decrypt NTLM hashes from a leaked SAM file.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+    - https://moyix.blogspot.com/2008/02/syskey-and-sam.html
+date: 2026/04/06
+author: Red Team
+logsource:
+    category: registry_access
+    product: windows
+detection:
+    selection:
+        TargetObject|contains:
+            - '\Control\Lsa\JD'
+            - '\Control\Lsa\Skew1'
+            - '\Control\Lsa\GBG'
+            - '\Control\Lsa\Data'
+    filter_lsass:
+        Image|endswith: '\lsass.exe'
+    filter_system:
+        Image|endswith:
+            - '\svchost.exe'
+            - '\services.exe'
+            - '\regedit.exe'
+    condition: selection and not filter_lsass and not filter_system
+falsepositives:
+    - Registry backup tools reading full SYSTEM hive
+    - System hardening audit tools
+    - regedit.exe browsing (filtered above)
+level: critical
+tags:
+    - attack.credential_access
+    - attack.t1003.002
+    - attack.t1552.002

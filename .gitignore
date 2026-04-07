@@ -1,0 +1,16 @@
+# Visual Studio
+.vs/
+FunnyApp/
+*.user
+*.aps
+
+# Build output
+x64/
+Debug/
+Release/
+*.exe
+*.pdb
+*.obj
+*.ilk
+*.idb
+*.log

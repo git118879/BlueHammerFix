@@ -1,0 +1,29 @@
+title: Temporary Service with GUID Name — BlueHammer SYSTEM Escalation
+id: 3d6b5f34-ea07-4ac4-d9b6-4b5a8f1e2d3c
+status: experimental
+description: |
+    Detects creation of a Windows service with a GUID-formatted name that is started
+    and deleted within seconds. BlueHammer creates a temporary service running its own
+    binary to escalate from admin to SYSTEM, then immediately removes the service.
+references:
+    - https://github.com/yourorg/bluehammer-analysis
+date: 2026/04/06
+author: Red Team
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 7045
+        ServiceName|re: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    condition: selection
+falsepositives:
+    - Some installers create GUID-named services temporarily
+    - Windows Update occasionally creates temporary services
+    - Container/sandbox technologies
+level: high
+tags:
+    - attack.privilege_escalation
+    - attack.t1543.003
+    - attack.execution
+    - attack.t1569.002
